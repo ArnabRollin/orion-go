@@ -1,0 +1,6 @@
+fn gre[jkdf] {
+    print("jkdf")
+}
+
+print("hi")
+input("how are you? ")

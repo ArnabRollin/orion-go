@@ -1,0 +1,358 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=jcroql
+version: 2
+
+env_files:
+  github_token: ~/.github_token
+
+before:
+  hooks:
+    - go mod tidy
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+gomod:
+  proxy: true
+
+report_sizes: true
+
+git:
+  ignore_tags:
+    - "{{ if not .IsNightly }}nightly{{ end }}"
+
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - "386"
+      - amd64
+      - arm
+      - arm64
+      - ppc64
+    goarm:
+      - "7"
+    ignore:
+      - goos: windows
+        goarch: arm
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }} -X main.builtBy='Solarcode-org' -X main.treeState={{ .IsGitDirty }}
+
+universal_binaries:
+  - replace: false
+
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      sign:
+        certificate: "{{.Env.MACOS_SIGN_P12}}"
+        password: "{{.Env.MACOS_SIGN_PASSWORD}}"
+      notarize:
+        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
+        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
+        key: "{{.Env.MACOS_NOTARY_KEY}}"
+
+# temporarely disables until we add better filters for platforms et al, and test more.
+# upx:
+#   - enabled: true
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^test:"
+      - "^test\\("
+      - "merge conflict"
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+      - go mod tidy
+  groups:
+    - title: Dependency updates
+      regexp: '^.*?(.+)\(deps\)!?:.+$'
+      order: 300
+    - title: "New Features"
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 100
+    - title: "Security updates"
+      regexp: '^.*?sec(\(.+\))??!?:.+$'
+      order: 150
+    - title: "Bug fixes"
+      regexp: '^.*?(fix|refactor)(\(.+\))??!?:.+$'
+      order: 200
+    - title: "Documentation updates"
+      regexp: ^.*?docs?(\(.+\))??!?:.+$
+      order: 400
+    - title: "Build process updates"
+      regexp: ^.*?(build|ci)(\(.+\))??!?:.+$
+      order: 400
+    - title: Other work
+      order: 9999
+
+dockers:
+  - image_templates:
+      - "Solarcode-org/orion:v{{ .Version }}-amd64"
+      - "ghcr.io/arnabrollin/orion:v{{ .Version }}-amd64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--label=io.artifacthub.package.readme-url=https://raw.githubusercontent.com/Solarcode-org/orion/main/README.md"
+      - '--label=io.artifacthub.package.maintainers=[{"name":"Arnab Phukan","email":"iamarnab.phukan@gmail.com"}]'
+      - "--label=io.artifacthub.package.license=Apache2.0"
+      - "--label=org.opencontainers.image.description=The Orion CLI"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.name={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--platform=linux/amd64"
+    extra_files:
+      - scripts/entrypoint.sh
+  - image_templates:
+      - "Solarcode-org/orion:v{{ .Version }}-arm64"
+      - "ghcr.io/arnabrollin/orion:v{{ .Version }}-arm64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--label=io.artifacthub.package.readme-url=https://raw.githubusercontent.com/Solarcode-org/orion/main/README.md"
+      - '--label=io.artifacthub.package.maintainers=[{"name":"Arnab Phukan","email":"iamarnab.phukan@gmail.com"}]'
+      - "--label=io.artifacthub.package.license=Apache2.0"
+      - "--label=org.opencontainers.image.description=Deliver Go binaries as fast and easily as possible"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.name={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--platform=linux/arm64"
+    goarch: arm64
+    extra_files:
+      - scripts/entrypoint.sh
+
+docker_manifests:
+  - name_template: "Solarcode-org/orion:v{{ .Version }}"
+    image_templates:
+      - "Solarcode-org/orion:v{{ .Version }}-amd64"
+      - "Solarcode-org/orion:v{{ .Version }}-arm64"
+  - name_template: "ghcr.io/Solarcode-org/orion:v{{ .Version }}"
+    image_templates:
+      - "ghcr.io/Solarcode-org/orion:v{{ .Version }}-amd64"
+      - "ghcr.io/Solarcode-org/orion:v{{ .Version }}-arm64"
+  - name_template: "{{ if not .IsNightly }}Solarcode-org/orion:latest{{ end }}"
+    image_templates:
+      - "Solarcode-org/orion:v{{ .Version }}-amd64"
+      - "Solarcode-org/orion:v{{ .Version }}-arm64"
+  - name_template: "{{ if not .IsNightly }}ghcr.io/Solarcode-org/orion:latest{{ end }}"
+    image_templates:
+      - "ghcr.io/Solarcode-org/orion:v{{ .Version }}-amd64"
+      - "ghcr.io/Solarcode-org/orion:v{{ .Version }}-arm64"
+  - name_template: "{{ if .IsNightly }}Solarcode-org/orion:nightly{{ end }}"
+    image_templates:
+      - "Solarcode-org/orion:v{{ .Version }}-amd64"
+      - "Solarcode-org/orion:v{{ .Version }}-arm64"
+  - name_template: "{{ if .IsNightly }}ghcr.io/Solarcode-org/orion:nightly{{ end }}"
+    image_templates:
+      - "ghcr.io/Solarcode-org/orion:v{{ .Version }}-amd64"
+      - "ghcr.io/Solarcode-org/orion:v{{ .Version }}-arm64"
+
+archives:
+  - name_template: >-
+      {{- .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end -}}
+    format_overrides:
+      - goos: windows
+        format: zip
+    builds_info:
+      group: root
+      owner: root
+      mtime: "{{ .CommitDate }}"
+    files:
+      - src: README.md
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+      - src: LICENSE
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+      - src: completions/*
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+      - src: manpages/*
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+
+brews:
+  - repository:
+      owner: Solarcode-org
+      name: homebrew-tap
+    directory: Formula
+    goarm: "7"
+    homepage: https://github.com/Solarcode-org/orion
+    description: The Orion CLI
+    license: Apache 2.0
+    test: |
+      system "#{bin}/orion -v"
+#    extra_install: |-
+#      bash_completion.install "completions/goreleaser.bash" => "goreleaser"
+#      zsh_completion.install "completions/goreleaser.zsh" => "_goreleaser"
+#      fish_completion.install "completions/goreleaser.fish"
+#      man1.install "manpages/goreleaser.1.gz"
+
+nix:
+  - name: orion
+    repository:
+      owner: Solarcode-org
+      name: nur
+    homepage: https://github.com/Solarcode-org/orion
+    description: The Orion CLI
+    path: pkgs/orion/default.nix
+    license: asl20
+#    extra_install: |-
+#      installManPage ./manpages/goreleaser.1.gz
+#      installShellCompletion ./completions/*
+
+winget:
+  - name: orion
+    publisher: Solarcode-org
+    license: Apache 2.0
+    homepage: https://github.com/Solarcode-org/orion
+    short_description: The Orion CLI
+    repository:
+      owner: Solarcode-org
+      name: winget-pkgs
+      branch: "main"
+      pull_request:
+        enabled: true
+        draft: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+
+aurs:
+  - homepage: https://github.com/Solarcode-org/orion
+    description: The Orion CLI
+    maintainers:
+      - "Arnab Phukan <iamarnab dot phukan at gmail dot com>"
+    license: Apache 2.0
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/orion-bin.git"
+    package: |-
+      # bin
+      install -Dm755 "./orion" "${pkgdir}/usr/bin/orion"
+
+      # license
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/orion/LICENSE"
+
+#      # completions
+#      mkdir -p "${pkgdir}/usr/share/bash-completion/completions/"
+#      mkdir -p "${pkgdir}/usr/share/zsh/site-functions/"
+#      mkdir -p "${pkgdir}/usr/share/fish/vendor_completions.d/"
+#      install -Dm644 "./completions/goreleaser.bash" "${pkgdir}/usr/share/bash-completion/completions/goreleaser"
+#      install -Dm644 "./completions/goreleaser.zsh" "${pkgdir}/usr/share/zsh/site-functions/_goreleaser"
+#      install -Dm644 "./completions/goreleaser.fish" "${pkgdir}/usr/share/fish/vendor_completions.d/goreleaser.fish"
+#
+#      # man pages
+#      install -Dm644 "./manpages/goreleaser.1.gz" "${pkgdir}/usr/share/man/man1/goreleaser.1.gz"
+
+scoops:
+  - repository:
+      owner: Solarcode-org
+      name: scoop-bucket
+    directory: bucket
+    homepage: https://github.com/Solarcode-org/orion
+    description: The Orion CLI
+    license: Apache 2.0
+
+nfpms:
+  - file_name_template: "{{ .ConventionalFileName }}"
+    id: packages
+    homepage: https://github.com/Solarcode-org/orion
+    description: |-
+      The Orion CLI
+    maintainer: Arnab Phukan <iamarnab.phukan@gmail.com>
+    license: Apache 2.0
+    vendor: Solarcode-org
+    bindir: /usr/bin
+    section: utils
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/doc/orion/copyright
+        file_info:
+          mode: 0644
+    formats:
+      - apk
+      - deb
+      - rpm
+      - archlinux
+    deb:
+      lintian_overrides:
+        - statically-linked-binary
+        - changelog-file-missing-in-native-package
+
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    output: true
+    artifacts: checksum
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - --yes
+
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    output: true
+    args:
+      - "sign"
+      - "${artifact}@${digest}"
+      - --yes
+
+publishers:
+  - name: fury.io
+    ids:
+      - packages
+    env:
+      - "FURY_TOKEN={{ .Env.FURY_TOKEN }}"
+    cmd: ./scripts/fury-upload.sh {{ .ArtifactName }}
+    disable: "{{ if .IsNightly }}true{{ end }}"
+
+milestones:
+  - close: true
+
+release:
+  name_template: "v{{ .Version }}"
+  footer: |
+    **Full Changelog**: https://github.com/Solarcode-org/orion/compare/{{ .PreviousTag }}...{{ if .IsNightly }}nightly{{ else }}{{ .Tag }}{{ end }}
